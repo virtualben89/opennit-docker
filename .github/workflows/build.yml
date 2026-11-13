@@ -7,8 +7,11 @@
 name: OpenNIT-Image bauen
 
 on:
+  # Täglich 6:00 Uhr deutscher Zeit. GitHub rechnet in UTC: 4:00 UTC = 6:00 Sommerzeit,
+  # 5:00 UTC = 6:00 Winterzeit. Der jeweils unpassende Lauf beendet sich sofort.
   schedule:
-    - cron: "23 */4 * * *"      # alle 4 Stunden
+    - cron: "0 4 * * *"
+    - cron: "0 5 * * *"
   workflow_dispatch:
     inputs:
       force:
@@ -46,9 +49,22 @@ jobs:
         id: check
         env:
           EVENT: ${{ github.event_name }}
+          SCHEDULE: ${{ github.event.schedule }}
           FORCE: ${{ inputs.force }}
         run: |
           set -euo pipefail
+          if [ "$EVENT" = schedule ]; then
+            # Sommerzeit (+0200) -> Lauf um 4:00 UTC, Winterzeit (+0100) -> Lauf um 5:00 UTC
+            case "$(TZ=Europe/Berlin date +%z)" in
+              +0200) expected="0 4 * * *" ;;
+              *)     expected="0 5 * * *" ;;
+            esac
+            if [ "$SCHEDULE" != "$expected" ]; then
+              echo "build=false" >> "$GITHUB_OUTPUT"
+              echo "Zeitplan '$SCHEDULE' entspricht heute nicht 6:00 Uhr deutscher Zeit – übersprungen." | tee -a "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+          fi
           remote=$(curl -fsSL -A "$USER_AGENT" "$UPDATE_BASE/version" | jq -r '.sha // empty')
           [[ "$remote" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Ungültige Antwort vom Update-Server: '$remote'"; exit 1; }
           known=$(jq -r '.sha // empty' upstream.json 2>/dev/null || true)

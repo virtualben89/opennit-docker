@@ -9,7 +9,7 @@ Image, MariaDB als eigener Container, Grundeinrichtung beim ersten Start automat
 > OpenNIT selbst bitte dort melden, Fehler im Container hier.
 
 Das Image wird automatisch neu gebaut, sobald ein neuer OpenNIT-Stand erscheint
-(Prüfung alle 4 Stunden), und liegt in der GitHub Container Registry:
+(Prüfung täglich um 6:00 Uhr), und liegt in der GitHub Container Registry:
 
 | Tag | Inhalt |
 |---|---|
@@ -106,7 +106,7 @@ rm opennit.env
 
 1. Repo anlegen und diese Dateien pushen.
 2. Den Workflow **„OpenNIT-Image bauen“** einmal von Hand starten
-   (Actions → Run workflow). Danach läuft er alle 4 Stunden.
+   (Actions → Run workflow). Danach prüft er täglich um 6:00 Uhr.
 3. Das Paket übernimmt die Sichtbarkeit des öffentlichen Repos. Falls es doch privat ist:
    *Packages → opennit → Package settings* → **Public**.
 4. Der Workflow committet nach jedem Build `upstream.json` (gebaute Version und SHA)
