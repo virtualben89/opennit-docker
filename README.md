@@ -107,8 +107,8 @@ rm opennit.env
 1. Repo anlegen und diese Dateien pushen.
 2. Den Workflow **„OpenNIT-Image bauen“** einmal von Hand starten
    (Actions → Run workflow). Danach läuft er alle 4 Stunden.
-3. Nach dem ersten Lauf unter *Packages → opennit → Package settings* die
-   Sichtbarkeit auf **Public** stellen. Neue GHCR-Pakete sind standardmäßig privat.
+3. Das Paket übernimmt die Sichtbarkeit des öffentlichen Repos. Falls es doch privat ist:
+   *Packages → opennit → Package settings* → **Public**.
 4. Der Workflow committet nach jedem Build `upstream.json` (gebaute Version und SHA)
    auf `main`. Ein Branchschutz auf `main` muss das für `github-actions[bot]` erlauben.
    Die Commits halten das Repo zugleich aktiv: GitHub pausiert zeitgesteuerte Workflows
