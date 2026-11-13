@@ -1,0 +1,9 @@
+.git
+.github
+.env
+.env.example
+opennit.env
+backups
+README.md
+update.sh
+upstream.json

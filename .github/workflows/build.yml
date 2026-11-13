@@ -1,0 +1,184 @@
+# Baut das OpenNIT-Image, sobald der Update-Server (Kanal "stable") einen neuen Stand meldet,
+# und veröffentlicht es in der GitHub Container Registry (ghcr.io/<owner>/opennit).
+#
+# Tags: <version> (1.2.2), <major.minor> (1.2), <major> (1), latest, sha-<7 Zeichen>
+#       Vorabversionen (1.3.0-rc.1) erhalten nur <version> und sha-…
+# Bei neuer Versionsnummer zusätzlich ein GitHub-Release mit dem Changelog-Abschnitt.
+name: OpenNIT-Image bauen
+
+on:
+  schedule:
+    - cron: "23 */4 * * *"      # alle 4 Stunden
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Auch ohne neuen Upstream-Stand neu bauen"
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+    paths:
+      - Dockerfile
+      - entrypoint.sh
+      - php.ini
+      - vhost.conf
+      - .github/workflows/build.yml
+
+permissions:
+  contents: write    # upstream.json committen, Releases anlegen
+  packages: write    # Image nach ghcr.io pushen
+
+concurrency:
+  group: build-image
+  cancel-in-progress: false
+
+env:
+  UPDATE_BASE: https://update.loheide.cloud/opennit
+  USER_AGENT: OpenNIT-Docker-Build
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Upstream-Stand prüfen
+        id: check
+        env:
+          EVENT: ${{ github.event_name }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          set -euo pipefail
+          remote=$(curl -fsSL -A "$USER_AGENT" "$UPDATE_BASE/version" | jq -r '.sha // empty')
+          [[ "$remote" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Ungültige Antwort vom Update-Server: '$remote'"; exit 1; }
+          known=$(jq -r '.sha // empty' upstream.json 2>/dev/null || true)
+          build=false
+          if [ "$remote" != "$known" ] || [ "$EVENT" = push ] || [ "$FORCE" = true ]; then build=true; fi
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          echo "Upstream: $remote | zuletzt gebaut: ${known:-–} | bauen: $build" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Paket laden und auswerten
+        id: pkg
+        if: steps.check.outputs.build == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -fsSL -A "$USER_AGENT" "$UPDATE_BASE/zip" -o src/opennit.zip
+          top=$(unzip -Z1 src/opennit.zip | awk -F/ 'NR==1{print $1}')
+          sha=$(grep -oE '[0-9a-f]{40}$' <<<"$top" || true)
+          [ -n "$sha" ] || { echo "::error::Commit-SHA nicht im ZIP-Verzeichnisnamen '$top' gefunden"; exit 1; }
+
+          mkdir -p /tmp/pkg
+          unzip -q -o src/opennit.zip "$top/VERSION" "$top/CHANGELOG.md" -d /tmp/pkg
+          version=$(tr -d '[:space:]' < "/tmp/pkg/$top/VERSION")
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || { echo "::error::Unerwartete VERSION '$version'"; exit 1; }
+
+          # Changelog-Abschnitt dieser Version: von "## [x.y.z]" bis zur nächsten "## ["-Überschrift
+          awk -v v="$version" 'index($0, "## [" v "]") == 1 {f=1; next} f && /^## \[/ {exit} f' \
+            "/tmp/pkg/$top/CHANGELOG.md" > /tmp/notes.md
+          [ -s /tmp/notes.md ] || echo "_Kein Changelog-Eintrag für $version gefunden._" > /tmp/notes.md
+          manual=false
+          grep -qE '^### .*(Wichtig für dieses Update|Vor dem Einspielen)' /tmp/notes.md && manual=true
+
+          img="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/opennit"
+          tags="$img:$version,$img:sha-${sha:0:7}"
+          if [[ "$version" != *-* ]]; then
+            IFS=. read -r major minor _ <<<"$version"
+            tags="$tags,$img:$major.$minor,$img:$major,$img:latest"
+          fi
+
+          release=false
+          gh release view "v$version" >/dev/null 2>&1 || release=true
+
+          {
+            echo "sha=$sha"; echo "version=$version"; echo "image=$img"
+            echo "tags=$tags"; echo "manual=$manual"; echo "release=$release"
+            echo "created=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "### OpenNIT $version (\`${sha:0:7}\`)"
+            echo "Tags: \`${tags//,/\`, \`}\`"
+            echo "Manuelle Schritte im Changelog: $manual | neues Release: $release"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: docker/setup-qemu-action@v3
+        if: steps.check.outputs.build == 'true'
+
+      - uses: docker/setup-buildx-action@v3
+        if: steps.check.outputs.build == 'true'
+
+      - uses: docker/login-action@v3
+        if: steps.check.outputs.build == 'true'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image bauen und pushen
+        if: steps.check.outputs.build == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.pkg.outputs.tags }}
+          labels: |
+            org.opencontainers.image.title=OpenNIT
+            org.opencontainers.image.version=${{ steps.pkg.outputs.version }}
+            org.opencontainers.image.revision=${{ steps.pkg.outputs.sha }}
+            org.opencontainers.image.created=${{ steps.pkg.outputs.created }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.licenses=AGPL-3.0-only
+            de.opennit.manual-steps=${{ steps.pkg.outputs.manual }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Gebauten Stand im Repo vermerken
+        if: steps.check.outputs.build == 'true'
+        env:
+          SHA: ${{ steps.pkg.outputs.sha }}
+          VERSION: ${{ steps.pkg.outputs.version }}
+          CREATED: ${{ steps.pkg.outputs.created }}
+        run: |
+          set -euo pipefail
+          jq -n --arg version "$VERSION" --arg sha "$SHA" --arg built_at "$CREATED" \
+            '{version: $version, sha: $sha, built_at: $built_at}' > upstream.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add upstream.json
+          if ! git diff --cached --quiet; then
+            git commit -m "OpenNIT $VERSION (${SHA:0:7})"
+            git push
+          fi
+
+      - name: GitHub-Release anlegen
+        if: steps.check.outputs.build == 'true' && steps.pkg.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.pkg.outputs.sha }}
+          VERSION: ${{ steps.pkg.outputs.version }}
+          IMAGE: ${{ steps.pkg.outputs.image }}
+          MANUAL: ${{ steps.pkg.outputs.manual }}
+        run: |
+          set -euo pipefail
+          {
+            if [ "$MANUAL" = true ]; then
+              echo '> [!WARNING]'
+              echo '> **Dieses Update enthält manuelle Schritte.** Vor dem Einspielen den Abschnitt'
+              echo '> „Wichtig für dieses Update“ bzw. „Vor dem Einspielen lesen“ unten lesen.'
+              echo
+            fi
+            echo "**Image:** \`$IMAGE:$VERSION\` · **Upstream-Stand:** \`$SHA\`"
+            echo
+            echo '```bash'
+            echo './update.sh'
+            echo '```'
+            echo
+            echo '---'
+            echo
+            cat /tmp/notes.md
+          } > /tmp/body.md
+          args=(--title "OpenNIT $VERSION" --notes-file /tmp/body.md --target "$(git rev-parse HEAD)")
+          [[ "$VERSION" == *-* ]] && args+=(--prerelease)
+          gh release create "v$VERSION" "${args[@]}"

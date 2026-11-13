@@ -1,0 +1,55 @@
+services:
+  db:
+    image: mariadb:11.4
+    restart: unless-stopped
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci",
+              "--log-bin-trust-function-creators=1"]
+    environment:
+      MARIADB_DATABASE: ${DB_NAME}
+      MARIADB_USER: ${DB_USER}
+      MARIADB_PASSWORD: ${DB_PASSWORD}
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+    volumes:
+      - db:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      retries: 10
+
+  app:
+    # Fertiges Image aus der GitHub Container Registry (OPENNIT_IMAGE in .env),
+    # ohne Angabe wird lokal gebaut: docker compose up -d --build
+    image: ${OPENNIT_IMAGE:-opennit:local}
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db: { condition: service_healthy }
+    env_file: .env
+    ports:
+      - "${HTTP_PORT:-8080}:80"
+    volumes:
+      - storage:/var/www/opennit/storage
+      - uploads:/var/www/opennit/public/uploads
+      - persist:/var/www/opennit/persist
+
+  # Ersetzt den Cron-Eintrag: bin/scheduler.php jede Minute
+  scheduler:
+    image: ${OPENNIT_IMAGE:-opennit:local}
+    build: .
+    restart: unless-stopped
+    depends_on:
+      app: { condition: service_healthy }
+    user: www-data
+    healthcheck:
+      disable: true    # kein Webserver in diesem Container
+    entrypoint: ["bash", "-c", "while true; do php bin/scheduler.php >> storage/logs/scheduler.log 2>&1; sleep 60; done"]
+    volumes:
+      - storage:/var/www/opennit/storage
+      - uploads:/var/www/opennit/public/uploads
+      - persist:/var/www/opennit/persist
+
+volumes:
+  db:
+  storage:
+  uploads:
+  persist:
