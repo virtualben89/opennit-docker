@@ -8,7 +8,7 @@ Image, MariaDB als eigener Container, Grundeinrichtung beim ersten Start automat
 > das unveränderte Paket vom offiziellen Update-Server (Kanal „stable“). Fehler in
 > OpenNIT selbst bitte dort melden, Fehler im Container hier.
 
-Das Image wird automatisch neu gebaut, sobald ein neuer OpenNIT-Stand erscheint
+Das Image wird automatisch neu gebaut, sobald eine neue OpenNIT-Version erscheint
 (Prüfung täglich um 6:00 Uhr), und liegt in der GitHub Container Registry:
 
 | Tag | Inhalt |
