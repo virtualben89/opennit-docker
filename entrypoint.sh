@@ -21,10 +21,20 @@ if [ "${1:-}" = "apache2-foreground" ] && ! is_installed; then
     : "${APP_URL:?APP_URL fehlt}" "${ADMIN_EMAIL:?ADMIN_EMAIL fehlt}" "${ADMIN_PASSWORD:?ADMIN_PASSWORD fehlt}"
 
     echo "[opennit] Warte auf Datenbank $DB_HOST:$DB_PORT …"
+    # Verbindungstest per PHP/PDO – kommt ohne mariadb-client im Image aus
+    db_ok=0
     for _ in $(seq 1 60); do
-        mariadb-admin ping -h"$DB_HOST" -P"$DB_PORT" -u"$DB_USER" -p"$DB_PASSWORD" --skip-ssl --silent 2>/dev/null && break
+        if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_PASSWORD="$DB_PASSWORD" php -r '
+            try {
+                new PDO("mysql:host=" . getenv("DB_HOST") . ";port=" . getenv("DB_PORT"),
+                        getenv("DB_USER"), getenv("DB_PASSWORD"), [PDO::ATTR_TIMEOUT => 3]);
+                exit(0);
+            } catch (Throwable $e) { exit(1); }' 2>/dev/null; then
+            db_ok=1; break
+        fi
         sleep 2
     done
+    [ "$db_ok" = 1 ] || { echo "[opennit] Datenbank $DB_HOST:$DB_PORT nach 120 s nicht erreichbar." >&2; exit 1; }
 
     echo "[opennit] Grundeinrichtung …"
     OPENNIT_DB_PASSWORD="$DB_PASSWORD" OPENNIT_ADMIN_PASSWORD="$ADMIN_PASSWORD" \

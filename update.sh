@@ -88,7 +88,11 @@ docker run --rm --entrypoint cat "$IMAGE" CHANGELOG.md | awk -v cur="$CUR" '
 
 printf '\n%sUpdate: %s → %s%s%s\n\n' "$B" "${CUR:-?}" "$NEW" "${NEW_SHA:+ (${NEW_SHA:0:7})}" "$R"
 if [ ! -s "$NOTES" ]; then
-    say "Gleiche Versionsnummer, neuerer Build (Fehlerbehebungen ohne eigenen Changelog-Eintrag)."
+    case "$(docker image inspect -f '{{index .Config.Labels "de.opennit.build-reason"}}' "$IMAGE" 2>/dev/null)" in
+        security) say "Gleiche Versionsnummer – Sicherheits-Neubau mit aktuellen Systempaketen (OpenNIT unverändert)." ;;
+        image)    say "Gleiche Versionsnummer – Änderungen am Container-Image (OpenNIT unverändert)." ;;
+        *)        say "Gleiche Versionsnummer, neuerer Build (ohne eigenen Changelog-Eintrag)." ;;
+    esac
 elif [ -t 1 ] && [ "$YES" = 0 ] && command -v less >/dev/null && [ "$(wc -l < "$NOTES")" -gt 40 ]; then
     less -R "$NOTES"
 else

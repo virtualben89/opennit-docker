@@ -21,6 +21,27 @@ Das Image wird automatisch neu gebaut, sobald eine neue OpenNIT-Version erschein
 Zu jeder neuen Version gibt es ein [GitHub-Release](../../releases) mit dem
 Changelog-Abschnitt. Releases mit manuellen Schritten tragen eine Warnung.
 
+### Sicherheit
+
+- **Schlankes Image:** Compiler und Build-Werkzeuge des PHP-Basis-Images werden nach dem
+  Kompilieren der Erweiterungen entfernt, auf einen MariaDB-Client wird verzichtet. Beim
+  Bauen werden alle Debian-Sicherheitsupdates eingespielt.
+- **Wöchentlicher Sicherheitsscan:** Jeden Montag prüft der Workflow das veröffentlichte
+  Image mit [Trivy](https://trivy.dev). Gibt es für HIGH/CRITICAL-Lücken inzwischen
+  Paket-Updates, wird dieselbe OpenNIT-Version mit aktuellen Systempaketen neu gebaut und
+  unter denselben Tags veröffentlicht (ohne neues Release). `update.sh` zeigt das als
+  „Sicherheits-Neubau“ an.
+- Jeder Build wird anschließend erneut gescannt; das Ergebnis steht in der
+  Zusammenfassung des Workflow-Laufs.
+- Verbleibende Treffer betreffen Debian-Pakete, für die Debian (noch) keinen Fix
+  bereitstellt (z. B. curl, libxml2) und die PHP zur Laufzeit benötigt.
+
+Selbst prüfen:
+
+```bash
+docker run --rm aquasec/trivy:0.76.2 image --severity HIGH,CRITICAL ghcr.io/virtualben89/opennit:1
+```
+
 ## Installation
 
 ```bash

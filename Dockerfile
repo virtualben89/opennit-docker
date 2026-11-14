@@ -9,9 +9,22 @@ ARG OPENNIT_UPDATE_BASE=https://update.loheide.cloud/opennit
 ENV APP_DIR=/var/www/opennit
 
 COPY --from=mlocati/php-extension-installer:2.7 /usr/bin/install-php-extensions /usr/local/bin/
-RUN install-php-extensions pdo_mysql gd zip intl opcache @composer \
- && apt-get update && apt-get install -y --no-install-recommends unzip curl mariadb-client \
- && rm -rf /var/lib/apt/lists/* \
+# Erweiterungen kompilieren, danach Sicherheitsupdates einspielen und die Compiler-Werkzeuge
+# des Basis-Images ($PHPIZE_DEPS, gcc-*/g++-*/cpp-*, -dev-Pakete, Kernel-Header) wieder
+# entfernen – zur Laufzeit unnötig und Quelle vieler CVE-Treffer. Alles in einem RUN,
+# damit die Werkzeuge in keiner Image-Schicht zurückbleiben.
+# REFRESH ändert sich bei jedem CI-Build und verhindert, dass apt-get upgrade aus dem
+# Build-Cache kommt (sonst brächte ein Sicherheits-Neubau keine neuen Pakete).
+ARG REFRESH=""
+RUN echo "Paketstand: ${REFRESH:-lokal}" \
+ && install-php-extensions pdo_mysql gd zip intl opcache @composer \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends unzip curl \
+ && apt-get upgrade -y \
+ && apt-get purge -y --auto-remove $PHPIZE_DEPS libc6-dev libcrypt-dev linux-libc-dev rpcsvc-proto \
+    $(dpkg-query -W -f '${Package}\n' | grep -E '^(cpp|gcc|g\+\+)(-[0-9]+)?(-[a-z0-9_-]+-linux-gnu)?$|^libstdc\+\+-[0-9]+-dev$') \
+ && apt-get clean && rm -rf /var/lib/apt/lists/* \
+ && php -m | grep -qix pdo_mysql && php -m | grep -qix gd && php -m | grep -qix intl \
  && a2enmod rewrite headers \
  && mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
 

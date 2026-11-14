@@ -2,6 +2,10 @@
 # ausliefert (Datei VERSION im Paket), und veröffentlicht es in der GitHub Container Registry
 # (ghcr.io/<owner>/opennit). Zwischenstände ohne neue Versionsnummer werden nicht gebaut.
 #
+# Sicherheits-Neubau: Montags scannt der Lauf zusätzlich das veröffentlichte Image mit Trivy.
+# Gibt es für HIGH/CRITICAL-Lücken inzwischen Paket-Updates, wird dieselbe Version mit
+# aktuellem Basis-Image und aktuellen Debian-Paketen neu gebaut (ohne neues Release).
+#
 # Tags: <version> (1.2.2), <major.minor> (1.2), <major> (1), latest, sha-<7 Zeichen>
 #       Vorabversionen (1.3.0-rc.1) erhalten nur <version> und sha-…
 # Bei neuer Versionsnummer zusätzlich ein GitHub-Release mit dem Changelog-Abschnitt.
@@ -17,6 +21,10 @@ on:
     inputs:
       force:
         description: "Auch ohne neue Versionsnummer neu bauen"
+        type: boolean
+        default: false
+      security_check:
+        description: "Sicherheitsscan des veröffentlichten Images ausführen (sonst nur montags)"
         type: boolean
         default: false
   push:
@@ -39,6 +47,7 @@ concurrency:
 env:
   UPDATE_BASE: https://update.loheide.cloud/opennit
   USER_AGENT: OpenNIT-Docker-Build
+  TRIVY_IMAGE: aquasec/trivy:0.76.2
 
 jobs:
   build:
@@ -52,6 +61,7 @@ jobs:
           EVENT: ${{ github.event_name }}
           SCHEDULE: ${{ github.event.schedule }}
           FORCE: ${{ inputs.force }}
+          SECURITY_CHECK: ${{ inputs.security_check }}
         run: |
           set -euo pipefail
           if [ "$EVENT" = schedule ]; then
@@ -76,13 +86,47 @@ jobs:
           echo "fetch=$fetch" >> "$GITHUB_OUTPUT"
           echo "Upstream: $remote | zuletzt gebaut: ${known:-–} | Paket prüfen: $fetch" | tee -a "$GITHUB_STEP_SUMMARY"
 
+          # Wöchentlicher Sicherheitsscan: montags (deutsche Zeit) oder manuell angefordert
+          weekly=false
+          if { [ "$EVENT" = schedule ] && [ "$(TZ=Europe/Berlin date +%u)" = 1 ]; } || [ "$SECURITY_CHECK" = true ]; then
+            weekly=true
+          fi
+          echo "weekly=$weekly" >> "$GITHUB_OUTPUT"
+          echo "Sicherheitsscan: $weekly" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Sicherheitsscan des veröffentlichten Images
+        id: sec
+        if: steps.check.outputs.weekly == 'true'
+        run: |
+          set -euo pipefail
+          version=$(jq -r '.version // empty' upstream.json 2>/dev/null || true)
+          [ -n "$version" ] || { echo "Noch kein gebautes Image vermerkt – Scan übersprungen."; exit 0; }
+          img="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/opennit:$version"
+          mkdir -p /tmp/trivy
+          # Nur Lücken, für die es bereits ein Paket-Update gibt – nur die behebt ein Neubau.
+          docker run --rm -v /tmp/trivy:/out "$TRIVY_IMAGE" image -q --scanners vuln \
+            --severity HIGH,CRITICAL --ignore-unfixed --format json -o /out/published.json "$img"
+          count=$(jq '[.Results[]?.Vulnerabilities[]?.VulnerabilityID] | unique | length' /tmp/trivy/published.json)
+          rebuild=false; [ "$count" -gt 0 ] && rebuild=true
+          echo "rebuild=$rebuild" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Sicherheitsscan \`$img\`"
+            echo "Behebbare HIGH/CRITICAL-Lücken: **$count** → Neubau: **$rebuild**"
+            if [ "$count" -gt 0 ]; then
+              echo; echo "| Schwere | CVE | Paket | Version |"; echo "|---|---|---|---|"
+              jq -r '.Results[]?.Vulnerabilities[]? | "| \(.Severity) | \(.VulnerabilityID) | \(.PkgName) | \(.InstalledVersion) → \(.FixedVersion) |"' \
+                /tmp/trivy/published.json | sort -u
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Paket laden und auswerten
         id: pkg
-        if: steps.check.outputs.fetch == 'true'
+        if: steps.check.outputs.fetch == 'true' || steps.sec.outputs.rebuild == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT: ${{ github.event_name }}
           FORCE: ${{ inputs.force }}
+          SECURITY: ${{ steps.sec.outputs.rebuild }}
         run: |
           set -euo pipefail
           curl -fsSL -A "$USER_AGENT" "$UPDATE_BASE/zip" -o src/opennit.zip
@@ -95,11 +139,18 @@ jobs:
           version=$(tr -d '[:space:]' < "/tmp/pkg/$top/VERSION")
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || { echo "::error::Unerwartete VERSION '$version'"; exit 1; }
 
-          # Nur bei neuer Versionsnummer bauen (oder bei Änderungen am Image / manuell erzwungen)
+          # Bauen bei neuer Versionsnummer, Änderungen am Image, manuell erzwungen oder
+          # wenn der Sicherheitsscan behebbare Lücken gefunden hat. Der Grund landet als Label im Image.
           known_version=$(jq -r '.version // empty' upstream.json 2>/dev/null || true)
-          build=false
-          if [ "$version" != "$known_version" ] || [ "$EVENT" = push ] || [ "$FORCE" = true ]; then build=true; fi
+          reason=""
+          if   [ "$version" != "$known_version" ]; then reason=release
+          elif [ "$SECURITY" = true ];             then reason=security
+          elif [ "$EVENT" = push ];                then reason=image
+          elif [ "$FORCE" = true ];                then reason=manual
+          fi
+          build=false; [ -n "$reason" ] && build=true
           echo "build=$build" >> "$GITHUB_OUTPUT"
+          echo "reason=$reason" >> "$GITHUB_OUTPUT"
           if [ "$build" = false ]; then
             echo "Version $version ist bereits gebaut (neuer Zwischenstand ${sha:0:7} ohne neue Versionsnummer) – kein Build." \
               | tee -a "$GITHUB_STEP_SUMMARY"
@@ -129,7 +180,7 @@ jobs:
             echo "created=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           } >> "$GITHUB_OUTPUT"
           {
-            echo "### OpenNIT $version (\`${sha:0:7}\`)"
+            echo "### OpenNIT $version (\`${sha:0:7}\`) – Anlass: $reason"
             echo "Tags: \`${tags//,/\`, \`}\`"
             echo "Manuelle Schritte im Changelog: $manual | neues Release: $release"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -155,6 +206,9 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.pkg.outputs.tags }}
+          pull: true      # immer das aktuelle Basis-Image (php:8.4-apache) verwenden
+          build-args: |
+            REFRESH=${{ github.run_id }}
           labels: |
             org.opencontainers.image.title=OpenNIT
             org.opencontainers.image.version=${{ steps.pkg.outputs.version }}
@@ -163,8 +217,24 @@ jobs:
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.licenses=AGPL-3.0-only
             de.opennit.manual-steps=${{ steps.pkg.outputs.manual }}
+            de.opennit.build-reason=${{ steps.pkg.outputs.reason }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Neues Image prüfen
+        if: steps.pkg.outputs.build == 'true'
+        env:
+          IMAGE: ${{ steps.pkg.outputs.image }}
+          VERSION: ${{ steps.pkg.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/trivy
+          docker run --rm -v /tmp/trivy:/out "$TRIVY_IMAGE" image -q --scanners vuln \
+            --severity HIGH,CRITICAL --format json -o /out/new.json "$IMAGE:$VERSION"
+          jq -r '[.Results[]?.Vulnerabilities[]?] | unique_by(.VulnerabilityID) as $v
+            | "### Prüfscan des neuen Images\n"
+            + "HIGH/CRITICAL gesamt: **\($v | length)**, davon mit verfügbarem Fix: **\([$v[] | select(.FixedVersion != null and .FixedVersion != "")] | length)**"' \
+            /tmp/trivy/new.json >> "$GITHUB_STEP_SUMMARY"
 
       - name: Gebauten Stand im Repo vermerken
         if: steps.pkg.outputs.build == 'true'
@@ -172,15 +242,22 @@ jobs:
           SHA: ${{ steps.pkg.outputs.sha }}
           VERSION: ${{ steps.pkg.outputs.version }}
           CREATED: ${{ steps.pkg.outputs.created }}
+          REASON: ${{ steps.pkg.outputs.reason }}
         run: |
           set -euo pipefail
-          jq -n --arg version "$VERSION" --arg sha "$SHA" --arg built_at "$CREATED" \
-            '{version: $version, sha: $sha, built_at: $built_at}' > upstream.json
+          jq -n --arg version "$VERSION" --arg sha "$SHA" --arg built_at "$CREATED" --arg reason "$REASON" \
+            '{version: $version, sha: $sha, built_at: $built_at, reason: $reason}' > upstream.json
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add upstream.json
           if ! git diff --cached --quiet; then
-            git commit -m "OpenNIT $VERSION (${SHA:0:7})"
+            case "$REASON" in
+              security) note=" – Sicherheits-Neubau" ;;
+              image)    note=" – Image-Änderung" ;;
+              manual)   note=" – manueller Neubau" ;;
+              *)        note="" ;;
+            esac
+            git commit -m "OpenNIT $VERSION (${SHA:0:7})$note"
             git push
           fi
 
