@@ -127,18 +127,6 @@ docker compose cp ./opennit.env app:/var/www/opennit/persist/.env && docker comp
 rm opennit.env
 ```
 
-## Einrichtung des GitHub-Repos (einmalig)
-
-1. Repo anlegen und diese Dateien pushen.
-2. Den Workflow **„OpenNIT-Image bauen“** einmal von Hand starten
-   (Actions → Run workflow). Danach prüft er täglich um 6:00 Uhr.
-3. Das Paket übernimmt die Sichtbarkeit des öffentlichen Repos. Falls es doch privat ist:
-   *Packages → opennit → Package settings* → **Public**.
-4. Der Workflow committet nach jedem Build `upstream.json` (gebaute Version und SHA)
-   auf `main`. Ein Branchschutz auf `main` muss das für `github-actions[bot]` erlauben.
-   Die Commits halten das Repo zugleich aktiv: GitHub pausiert zeitgesteuerte Workflows
-   sonst nach 60 Tagen ohne Aktivität.
-
 ## Lizenz
 
 AGPL-3.0, wie OpenNIT selbst (siehe [LICENSE](LICENSE)). Der vollständige Quelltext von
