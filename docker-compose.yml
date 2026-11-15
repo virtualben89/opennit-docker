@@ -9,6 +9,7 @@ services:
       MARIADB_USER: ${DB_USER}
       MARIADB_PASSWORD: ${DB_PASSWORD}
       MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      TZ: Europe/Berlin
     volumes:
       - db:/var/lib/mysql
     healthcheck:
@@ -17,10 +18,8 @@ services:
       retries: 10
 
   app:
-    # Fertiges Image aus der GitHub Container Registry (OPENNIT_IMAGE in .env),
-    # ohne Angabe wird lokal gebaut: docker compose up -d --build
-    image: ${OPENNIT_IMAGE:-opennit:local}
-    build: .
+    # Fertiges Image aus der GitHub Container Registry (Tag über OPENNIT_IMAGE in .env)
+    image: ${OPENNIT_IMAGE:-ghcr.io/virtualben89/opennit:1}
     restart: unless-stopped
     depends_on:
       db: { condition: service_healthy }
@@ -34,8 +33,7 @@ services:
 
   # Ersetzt den Cron-Eintrag: bin/scheduler.php jede Minute
   scheduler:
-    image: ${OPENNIT_IMAGE:-opennit:local}
-    build: .
+    image: ${OPENNIT_IMAGE:-ghcr.io/virtualben89/opennit:1}
     restart: unless-stopped
     depends_on:
       app: { condition: service_healthy }

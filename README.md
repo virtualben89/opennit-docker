@@ -54,8 +54,12 @@ docker compose logs -f app
 Danach unter `APP_URL` mit `ADMIN_EMAIL` / `ADMIN_PASSWORD` anmelden. `ADMIN_PASSWORD`
 wird nur bei der Ersteinrichtung gebraucht und kann danach aus der `.env` entfernt werden.
 
-Lokal bauen statt das fertige Image zu nutzen: `OPENNIT_IMAGE` in der `.env`
-auskommentieren und `docker compose up -d --build` ausführen.
+Das Compose-File nutzt immer das fertige Image aus der Registry. Ein eigenes Image lässt
+sich mit `docker build -t opennit:eigen .` bauen und über `OPENNIT_IMAGE=opennit:eigen`
+einbinden. `update.sh` funktioniert dann nicht, weil es das Image aus der Registry holt.
+
+Statt der benannten Volumes gehen auch Bind-Mounts (z. B. `/srv/opennit/storage`), ohne
+`ports` lässt sich der Container hinter einen Reverse Proxy hängen (siehe [HTTPS](#https)).
 
 ## Updates
 

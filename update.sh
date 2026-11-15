@@ -38,8 +38,6 @@ dc()   { docker compose "$@"; }
 # --- Ausgangslage ------------------------------------------------------------
 IMAGE=$(dc config --images | awk '!/mariadb/ && !x {print; x=1}')
 [ -n "$IMAGE" ] || die "Image des app-Dienstes nicht ermittelbar (docker compose config)."
-[ "$IMAGE" != "opennit:local" ] \
-    || die "Lokal gebautes Image – in .env OPENNIT_IMAGE=ghcr.io/virtualben89/opennit:1 setzen."
 
 APP_CID=$(dc ps -q app)
 [ -n "$APP_CID" ] || die "Der app-Container läuft nicht – zuerst: docker compose up -d"
