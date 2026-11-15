@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Erststart: führt die Grundeinrichtung (install.php --cli) automatisch aus.
+# First start: runs the initial setup (install.php --cli) automatically.
 set -euo pipefail
 cd "$APP_DIR"
 
 mkdir -p persist storage public/uploads
-# Volumes werden nur beim ersten Start aus dem Image befüllt. Neue Verzeichnisse/Dateien
-# eines Updates nachziehen, ohne Vorhandenes zu überschreiben.
+# Volumes are only populated from the image on first start. Add new directories/files
+# of an update without overwriting existing ones.
 cp -an /opt/skel-storage/. storage/
 cp -an /opt/skel-uploads/. public/uploads/
 [ -e persist/.env ] || install -m 640 -o www-data -g www-data /dev/null persist/.env
@@ -17,11 +17,11 @@ is_installed() {
 
 if [ "${1:-}" = "apache2-foreground" ] && ! is_installed; then
     : "${DB_HOST:=db}" "${DB_PORT:=3306}"
-    : "${DB_NAME:?DB_NAME fehlt}" "${DB_USER:?DB_USER fehlt}" "${DB_PASSWORD:?DB_PASSWORD fehlt}"
-    : "${APP_URL:?APP_URL fehlt}" "${ADMIN_EMAIL:?ADMIN_EMAIL fehlt}" "${ADMIN_PASSWORD:?ADMIN_PASSWORD fehlt}"
+    : "${DB_NAME:?DB_NAME is not set}" "${DB_USER:?DB_USER is not set}" "${DB_PASSWORD:?DB_PASSWORD is not set}"
+    : "${APP_URL:?APP_URL is not set}" "${ADMIN_EMAIL:?ADMIN_EMAIL is not set}" "${ADMIN_PASSWORD:?ADMIN_PASSWORD is not set}"
 
-    echo "[opennit] Warte auf Datenbank $DB_HOST:$DB_PORT …"
-    # Verbindungstest per PHP/PDO – kommt ohne mariadb-client im Image aus
+    echo "[opennit] Waiting for database $DB_HOST:$DB_PORT …"
+    # Connection test via PHP/PDO – works without mariadb-client in the image
     db_ok=0
     for _ in $(seq 1 60); do
         if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_PASSWORD="$DB_PASSWORD" php -r '
@@ -34,26 +34,26 @@ if [ "${1:-}" = "apache2-foreground" ] && ! is_installed; then
         fi
         sleep 2
     done
-    [ "$db_ok" = 1 ] || { echo "[opennit] Datenbank $DB_HOST:$DB_PORT nach 120 s nicht erreichbar." >&2; exit 1; }
+    [ "$db_ok" = 1 ] || { echo "[opennit] Database $DB_HOST:$DB_PORT not reachable after 120 s." >&2; exit 1; }
 
-    echo "[opennit] Grundeinrichtung …"
+    echo "[opennit] Initial setup …"
     OPENNIT_DB_PASSWORD="$DB_PASSWORD" OPENNIT_ADMIN_PASSWORD="$ADMIN_PASSWORD" \
     su -s /bin/bash www-data -c "php public/install.php --cli \
         --db-host='$DB_HOST' --db-port='$DB_PORT' --db-name='$DB_NAME' --db-user='$DB_USER' \
         --app-url='$APP_URL' --admin-email='$ADMIN_EMAIL'"
 
-    # Ohne HTTPS würde der Browser das Secure-Cookie nicht senden -> Login scheitert.
+    # Without HTTPS the browser would not send the secure cookie -> login fails.
     if [[ "$APP_URL" == http://* ]] && ! grep -q '^SESSION_SECURE=' .env; then
         [ -n "$(tail -c1 .env)" ] && printf '\n' >> .env
         printf 'SESSION_SECURE=false\n' >> .env
     fi
-    echo "[opennit] Einrichtung abgeschlossen – Login mit $ADMIN_EMAIL unter $APP_URL"
+    echo "[opennit] Setup complete – log in as $ADMIN_EMAIL at $APP_URL"
 fi
 
-# install.php steckt in jedem neuen Image wieder drin – nach der Einrichtung entfernen.
+# Every new image contains install.php again – remove it once installed.
 is_installed && rm -f public/install.php
 
-# Versionsstand des Images vermerken, damit die Update-Prüfung passt.
+# Record the image's upstream revision so the update check matches.
 [ -s /opt/opennit.sha ] && install -o www-data -g www-data -m 644 /opt/opennit.sha storage/.version
 
 exec "$@"

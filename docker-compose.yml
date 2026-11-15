@@ -18,7 +18,7 @@ services:
       retries: 10
 
   app:
-    # Fertiges Image aus der GitHub Container Registry (Tag über OPENNIT_IMAGE in .env)
+    # Prebuilt image from the GitHub Container Registry (tag via OPENNIT_IMAGE in .env)
     image: ${OPENNIT_IMAGE:-ghcr.io/virtualben89/opennit:1}
     restart: unless-stopped
     depends_on:
@@ -31,7 +31,7 @@ services:
       - uploads:/var/www/opennit/public/uploads
       - persist:/var/www/opennit/persist
 
-  # Ersetzt den Cron-Eintrag: bin/scheduler.php jede Minute
+  # Replaces the cron entry: runs bin/scheduler.php every minute
   scheduler:
     image: ${OPENNIT_IMAGE:-ghcr.io/virtualben89/opennit:1}
     restart: unless-stopped
@@ -39,7 +39,7 @@ services:
       app: { condition: service_healthy }
     user: www-data
     healthcheck:
-      disable: true    # kein Webserver in diesem Container
+      disable: true    # no web server in this container
     entrypoint: ["bash", "-c", "while true; do php bin/scheduler.php >> storage/logs/scheduler.log 2>&1; sleep 60; done"]
     volumes:
       - storage:/var/www/opennit/storage

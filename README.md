@@ -1,42 +1,44 @@
-# OpenNIT – Docker-Image
+# OpenNIT – Docker image
 
-Inoffizielles Docker-Image für [OpenNIT](https://opennit.de), die self-hosted
-IT-Dokumentation. Es ersetzt das native `install.sh`: Apache + PHP 8.4 (mod_php) im
-Image, MariaDB als eigener Container, Grundeinrichtung beim ersten Start automatisch.
+**English** · [Deutsch](README.de.md)
 
-> **Hinweis:** Dieses Projekt steht in keiner Verbindung zum OpenNIT-Projekt. Es verpackt
-> das unveränderte Paket vom offiziellen Update-Server (Kanal „stable“). Fehler in
-> OpenNIT selbst bitte dort melden, Fehler im Container hier.
+Unofficial Docker image for [OpenNIT](https://opennit.de), the self-hosted IT
+documentation. It replaces the native `install.sh`: Apache + PHP 8.4 (mod_php) in the
+image, MariaDB as a separate container, initial setup runs automatically on first start.
 
-Das Image wird automatisch neu gebaut, sobald eine neue OpenNIT-Version erscheint
-(Prüfung täglich um 6:00 Uhr), und liegt in der GitHub Container Registry:
+> **Note:** This project is not affiliated with the OpenNIT project. It packages the
+> unmodified release from the official update server (channel “stable”). Please report
+> bugs in OpenNIT itself there, bugs in the container here.
 
-| Tag | Inhalt |
+The image is rebuilt automatically as soon as a new OpenNIT version is released
+(checked daily at 6:00 German time) and is published in the GitHub Container Registry:
+
+| Tag | Content |
 |---|---|
-| `:1.2.2` | genau diese Version |
-| `:1.2` | neueste 1.2.x (nur Bugfixes) |
-| `:1` / `:latest` | neueste 1.x |
-| `:sha-ce7e633` | exakt dieser Upstream-Commit |
+| `:1.2.2` | exactly this version |
+| `:1.2` | latest 1.2.x (bug fixes only) |
+| `:1` / `:latest` | latest 1.x |
+| `:sha-ce7e633` | exactly this upstream commit |
 
-Zu jeder neuen Version gibt es ein [GitHub-Release](../../releases) mit dem
-Changelog-Abschnitt. Releases mit manuellen Schritten tragen eine Warnung.
+Every new version gets a [GitHub release](../../releases) with its changelog section.
+Releases with manual steps carry a warning. OpenNIT itself is available in German and
+English; its changelog is written in German only.
 
-### Sicherheit
+### Security
 
-- **Schlankes Image:** Compiler und Build-Werkzeuge des PHP-Basis-Images werden nach dem
-  Kompilieren der Erweiterungen entfernt, auf einen MariaDB-Client wird verzichtet. Beim
-  Bauen werden alle Debian-Sicherheitsupdates eingespielt.
-- **Wöchentlicher Sicherheitsscan:** Jeden Montag prüft der Workflow das veröffentlichte
-  Image mit [Trivy](https://trivy.dev). Gibt es für HIGH/CRITICAL-Lücken inzwischen
-  Paket-Updates, wird dieselbe OpenNIT-Version mit aktuellen Systempaketen neu gebaut und
-  unter denselben Tags veröffentlicht (ohne neues Release). `update.sh` zeigt das als
-  „Sicherheits-Neubau“ an.
-- Jeder Build wird anschließend erneut gescannt; das Ergebnis steht in der
-  Zusammenfassung des Workflow-Laufs.
-- Verbleibende Treffer betreffen Debian-Pakete, für die Debian (noch) keinen Fix
-  bereitstellt (z. B. curl, libxml2) und die PHP zur Laufzeit benötigt.
+- **Slim image:** the compilers and build tools of the PHP base image are removed after
+  the extensions are compiled, and no MariaDB client is included. All Debian security
+  updates are applied at build time.
+- **Weekly security scan:** every Monday the workflow scans the published image with
+  [Trivy](https://trivy.dev). If package updates have become available for HIGH/CRITICAL
+  vulnerabilities, the same OpenNIT version is rebuilt with current system packages and
+  published under the same tags (without a new release). `update.sh` reports this as a
+  “security rebuild”.
+- Every build is scanned again afterwards; the result is shown in the workflow run summary.
+- Remaining findings affect Debian packages for which Debian does not (yet) provide a fix
+  (e.g. curl, libxml2) and which PHP needs at runtime.
 
-Selbst prüfen:
+Check it yourself:
 
 ```bash
 docker run --rm aquasec/trivy:0.76.2 image --severity HIGH,CRITICAL ghcr.io/virtualben89/opennit:1
@@ -44,91 +46,103 @@ docker run --rm aquasec/trivy:0.76.2 image --severity HIGH,CRITICAL ghcr.io/virt
 
 ## Installation
 
+No need to clone the repository, three files are enough:
+
 ```bash
-git clone https://github.com/virtualben89/opennit-docker.git && cd opennit-docker
-cp .env.example .env      # OPENNIT_IMAGE, APP_URL, ADMIN_EMAIL und Passwörter setzen
+mkdir opennit && cd opennit
+base=https://raw.githubusercontent.com/virtualben89/opennit-docker/main
+curl -fsSL -O $base/docker-compose.yml -O $base/update.sh
+curl -fsSL $base/.env.example -o .env && chmod +x update.sh
+nano .env                 # set OPENNIT_IMAGE, APP_URL, ADMIN_EMAIL and passwords
 docker compose up -d
 docker compose logs -f app
 ```
 
-Danach unter `APP_URL` mit `ADMIN_EMAIL` / `ADMIN_PASSWORD` anmelden. `ADMIN_PASSWORD`
-wird nur bei der Ersteinrichtung gebraucht und kann danach aus der `.env` entfernt werden.
+Then log in at `APP_URL` with `ADMIN_EMAIL` / `ADMIN_PASSWORD`. `ADMIN_PASSWORD` is only
+needed for the initial setup and can be removed from `.env` afterwards. The interface
+language can be switched in OpenNIT itself.
 
-Das Compose-File nutzt immer das fertige Image aus der Registry. Ein eigenes Image lässt
-sich mit `docker build -t opennit:eigen .` bauen und über `OPENNIT_IMAGE=opennit:eigen`
-einbinden. `update.sh` funktioniert dann nicht, weil es das Image aus der Registry holt.
+The compose file always uses the prebuilt image from the registry. You can build your own
+image with `docker build -t opennit:custom .` and use it via `OPENNIT_IMAGE=opennit:custom`.
+`update.sh` does not work in that case, because it pulls the image from the registry.
 
-Statt der benannten Volumes gehen auch Bind-Mounts (z. B. `/srv/opennit/storage`), ohne
-`ports` lässt sich der Container hinter einen Reverse Proxy hängen (siehe [HTTPS](#https)).
+Bind mounts (e.g. `/srv/opennit/storage`) work instead of the named volumes, and without
+`ports` the container can sit behind a reverse proxy (see [HTTPS](#https)).
 
 ## Updates
 
 ```bash
-./update.sh            # prüft, zeigt den Changelog, sichert, spielt ein
-./update.sh --check    # nur prüfen (Exit 10 = Update verfügbar)
+./update.sh            # checks, shows the changelog, backs up, applies
+./update.sh --check    # check only (exit 10 = update available)
 ```
 
-`update.sh` macht Folgendes:
+`update.sh` prints German messages if the locale is German (`LANG=de_DE.UTF-8`) and English
+otherwise. Set `OPENNIT_LANG=en` or `de` to choose explicitly.
 
-1. Holt das neue Image. Der laufende Container bleibt dabei unverändert.
-2. Zeigt alle Changelog-Abschnitte seit der installierten Version.
-3. Warnt, wenn ein Abschnitt „Wichtig für dieses Update“ oder „Vor dem Einspielen lesen“
-   vorkommt.
-4. Sichert die Datenbank (Dump) und die Dateien (`persist`, `storage`, `uploads`) nach
-   `./backups/` und hält das bisherige Image als `opennit-rollback:<version>-<zeit>` vor.
-5. Startet die neue Version und wartet, bis sie gesund ist.
-6. Behält 7 Backups und 3 Rollback-Images.
+`update.sh` does the following:
 
-Einige Schritte, die der Changelog nennt, erledigt das Image selbst: `composer install`,
-neue `storage`-Ordner und die Datenbank-Migrationen. Was darüber hinausgeht (z. B. Rollen
-prüfen, Agent-Skripte neu verteilen), bleibt Handarbeit.
+1. Pulls the new image. The running container stays untouched.
+2. Shows all changelog sections since the installed version.
+3. Warns if a section “Wichtig für dieses Update” (important for this update) or
+   “Vor dem Einspielen lesen” (read before applying) is present.
+4. Backs up the database (dump) and the files (`persist`, `storage`, `uploads`) to
+   `./backups/` and keeps the previous image as `opennit-rollback:<version>-<time>`.
+5. Starts the new version and waits until it is healthy.
+6. Keeps 7 backups and 3 rollback images.
 
-**Automatisch per Cron**, z. B. nachts:
+Some steps named in the changelog are handled by the image itself: `composer install`,
+new `storage` folders and the database migrations. Anything beyond that (e.g. reviewing
+roles, redeploying agent scripts) remains manual work.
+
+**Automatically via cron**, e.g. at night:
 
 ```cron
-30 3 * * *  cd /opt/opennit-docker && ./update.sh -y >> backups/update.log 2>&1
+30 3 * * *  cd /opt/opennit && ./update.sh -y >> backups/update.log 2>&1
 ```
 
-Mit `-y` bricht das Skript mit Exit 2 ab, wenn das Update manuelle Schritte enthält.
-Diese Updates spielst du dann interaktiv ein. `-y --force` überspringt auch diese Prüfung.
+With `-y` the script aborts with exit 2 if the update contains manual steps. Apply those
+updates interactively. `-y --force` skips this check as well.
 
-Den eingebauten Updater in der OpenNIT-Weboberfläche **nicht** verwenden: Seine
-Änderungen landen nur im Container und gehen beim nächsten Neustart verloren.
+A plain `docker compose up -d --pull always` also updates OpenNIT, including the database
+migrations – but without a backup, without a rollback image and without a warning about
+manual steps.
+
+Do **not** use the built-in updater in the OpenNIT web interface: its changes only end up
+in the container and are lost on the next restart.
 
 ### Rollback
 
-Jedes Backup-Verzeichnis enthält eine `ROLLBACK.txt` mit den fertigen Befehlen:
-Datenbank-Dump einspielen, altes Image starten, bei Bedarf Dateien zurückspielen.
-OpenNIT kann Schema-Migrationen nicht selbst zurückdrehen, deshalb gehören altes Image
-und alte Datenbank immer zusammen.
+Every backup directory contains a `ROLLBACK.txt` with ready-to-run commands: restore the
+database dump, start the old image, restore files if needed. OpenNIT cannot roll back
+schema migrations by itself, so old image and old database always belong together.
 
-## Persistente Daten
+## Persistent data
 
-| Volume | Inhalt |
+| Volume | Content |
 |---|---|
 | `db` | MariaDB |
-| `storage` | `storage/` (Dateien, Logs, Installationsmarker) |
+| `storage` | `storage/` (files, logs, installation marker) |
 | `uploads` | `public/uploads/` |
-| `persist` | OpenNIT-`.env` mit **APP_KEY** und `config/runtime.php` |
+| `persist` | OpenNIT `.env` with **APP_KEY** and `config/runtime.php` |
 
-**Ohne den APP_KEY aus `persist/.env` sind verschlüsselte Daten verloren.** Die
-`update.sh`-Backups enthalten ihn. Die Dateien liegen mit Rechten 600 in `./backups/`
-und sollten zusätzlich außerhalb des Servers gesichert werden.
+**Without the APP_KEY from `persist/.env`, encrypted data is lost.** The `update.sh`
+backups contain it. They are stored with mode 600 in `./backups/` and should also be
+backed up off the server.
 
 ## HTTPS
 
-Den Container hinter einen Reverse Proxy (Traefik, Caddy, nginx) stellen und
-`APP_URL=https://…` setzen. Wurde mit `http://` installiert, die OpenNIT-`.env` anpassen:
+Put the container behind a reverse proxy (Traefik, Caddy, nginx) and set
+`APP_URL=https://…`. If it was installed with `http://`, adjust the OpenNIT `.env`:
 
 ```bash
 docker compose cp app:/var/www/opennit/persist/.env ./opennit.env
-# APP_URL auf https://… ändern, Zeile SESSION_SECURE=false entfernen
+# change APP_URL to https://…, remove the line SESSION_SECURE=false
 docker compose cp ./opennit.env app:/var/www/opennit/persist/.env && docker compose restart app
 rm opennit.env
 ```
 
-## Lizenz
+## License
 
-AGPL-3.0, wie OpenNIT selbst (siehe [LICENSE](LICENSE)). Der vollständige Quelltext von
-OpenNIT liegt im Image unter `/var/www/opennit` und ist über
-[opennit.de](https://opennit.de) erhältlich.
+AGPL-3.0, like OpenNIT itself (see [LICENSE](LICENSE)). The complete OpenNIT source code
+is included in the image under `/var/www/opennit` and is available from
+[opennit.de](https://opennit.de).

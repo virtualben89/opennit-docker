@@ -276,15 +276,21 @@ jobs:
               echo '> [!WARNING]'
               echo '> **Dieses Update enthält manuelle Schritte.** Vor dem Einspielen den Abschnitt'
               echo '> „Wichtig für dieses Update“ bzw. „Vor dem Einspielen lesen“ unten lesen.'
+              echo '>'
+              echo '> **This update requires manual steps.** Read the section “Wichtig für dieses'
+              echo '> Update” (important for this update) or “Vor dem Einspielen lesen” (read before'
+              echo '> applying) below before updating.'
               echo
             fi
-            echo "**Image:** \`$IMAGE:$VERSION\` · **Upstream-Stand:** \`$SHA\`"
+            echo "**Image:** \`$IMAGE:$VERSION\` · **Upstream:** \`$SHA\`"
             echo
             echo '```bash'
             echo './update.sh'
             echo '```'
             echo
             echo '---'
+            echo
+            echo '_Changelog des OpenNIT-Projekts (nur auf Deutsch) · Changelog of the OpenNIT project (German only)_'
             echo
             cat /tmp/notes.md
           } > /tmp/body.md

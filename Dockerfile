@@ -3,7 +3,7 @@ FROM php:8.4-apache
 
 LABEL org.opencontainers.image.licenses="AGPL-3.0-only" \
       org.opencontainers.image.url="https://opennit.de" \
-      org.opencontainers.image.description="Inoffizielles Docker-Image für OpenNIT (Apache + PHP 8.4)"
+      org.opencontainers.image.description="Unofficial Docker image for OpenNIT, self-hosted IT documentation (Apache + PHP 8.4)"
 
 ARG OPENNIT_UPDATE_BASE=https://update.loheide.cloud/opennit
 ENV APP_DIR=/var/www/opennit
