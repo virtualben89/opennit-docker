@@ -20,6 +20,9 @@ The image is rebuilt automatically as soon as a new OpenNIT version is released
 | `:1` / `:latest` | latest 1.x |
 | `:sha-ce7e633` | exactly this upstream commit |
 
+The build runs on GitHub Actions or, optionally, on your own hardware via a
+[self-hosted runner](runner/README.md).
+
 Every new version gets a [GitHub release](../../releases) with its changelog section.
 Releases with manual steps carry a warning. OpenNIT itself is available in German and
 English; its changelog is written in German only.

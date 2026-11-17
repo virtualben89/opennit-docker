@@ -20,6 +20,9 @@ Das Image wird automatisch neu gebaut, sobald eine neue OpenNIT-Version erschein
 | `:1` / `:latest` | neueste 1.x |
 | `:sha-ce7e633` | exakt dieser Upstream-Commit |
 
+Gebaut wird über GitHub Actions oder wahlweise auf eigener Hardware über einen
+[Self-hosted Runner](runner/README.md#deutsch).
+
 Zu jeder neuen Version gibt es ein [GitHub-Release](../../releases) mit dem
 Changelog-Abschnitt. Releases mit manuellen Schritten tragen eine Warnung.
 
