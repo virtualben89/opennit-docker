@@ -51,7 +51,9 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # Repo variable RUNS_ON selects the runner, e.g. ["self-hosted","opennit-build"]
+    # (see runner/README.md). Without it the job runs on GitHub's ubuntu-latest.
+    runs-on: ${{ fromJSON(vars.RUNS_ON || '"ubuntu-latest"') }}
     steps:
       - uses: actions/checkout@v7
 
@@ -102,11 +104,11 @@ jobs:
           version=$(jq -r '.version // empty' upstream.json 2>/dev/null || true)
           [ -n "$version" ] || { echo "Noch kein gebautes Image vermerkt – Scan übersprungen."; exit 0; }
           img="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/opennit:$version"
-          mkdir -p /tmp/trivy
+          mkdir -p "$RUNNER_TEMP/trivy"
           # Nur Lücken, für die es bereits ein Paket-Update gibt – nur die behebt ein Neubau.
-          docker run --rm -v /tmp/trivy:/out "$TRIVY_IMAGE" image -q --scanners vuln \
+          docker run --rm -v "$RUNNER_TEMP/trivy:/out" "$TRIVY_IMAGE" image -q --scanners vuln \
             --severity HIGH,CRITICAL --ignore-unfixed --format json -o /out/published.json "$img"
-          count=$(jq '[.Results[]?.Vulnerabilities[]?.VulnerabilityID] | unique | length' /tmp/trivy/published.json)
+          count=$(jq '[.Results[]?.Vulnerabilities[]?.VulnerabilityID] | unique | length' "$RUNNER_TEMP/trivy/published.json")
           rebuild=false; [ "$count" -gt 0 ] && rebuild=true
           echo "rebuild=$rebuild" >> "$GITHUB_OUTPUT"
           {
@@ -115,7 +117,7 @@ jobs:
             if [ "$count" -gt 0 ]; then
               echo; echo "| Schwere | CVE | Paket | Version |"; echo "|---|---|---|---|"
               jq -r '.Results[]?.Vulnerabilities[]? | "| \(.Severity) | \(.VulnerabilityID) | \(.PkgName) | \(.InstalledVersion) → \(.FixedVersion) |"' \
-                /tmp/trivy/published.json | sort -u
+                "$RUNNER_TEMP/trivy/published.json" | sort -u
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -134,9 +136,9 @@ jobs:
           sha=$(grep -oE '[0-9a-f]{40}$' <<<"$top" || true)
           [ -n "$sha" ] || { echo "::error::Commit-SHA nicht im ZIP-Verzeichnisnamen '$top' gefunden"; exit 1; }
 
-          mkdir -p /tmp/pkg
-          unzip -q -o src/opennit.zip "$top/VERSION" "$top/CHANGELOG.md" -d /tmp/pkg
-          version=$(tr -d '[:space:]' < "/tmp/pkg/$top/VERSION")
+          mkdir -p "$RUNNER_TEMP/pkg"
+          unzip -q -o src/opennit.zip "$top/VERSION" "$top/CHANGELOG.md" -d "$RUNNER_TEMP/pkg"
+          version=$(tr -d '[:space:]' < "$RUNNER_TEMP/pkg/$top/VERSION")
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || { echo "::error::Unerwartete VERSION '$version'"; exit 1; }
 
           # Bauen bei neuer Versionsnummer, Änderungen am Image, manuell erzwungen oder
@@ -159,10 +161,10 @@ jobs:
 
           # Changelog-Abschnitt dieser Version: von "## [x.y.z]" bis zur nächsten "## ["-Überschrift
           awk -v v="$version" 'index($0, "## [" v "]") == 1 {f=1; next} f && /^## \[/ {exit} f' \
-            "/tmp/pkg/$top/CHANGELOG.md" > /tmp/notes.md
-          [ -s /tmp/notes.md ] || echo "_Kein Changelog-Eintrag für $version gefunden._" > /tmp/notes.md
+            "$RUNNER_TEMP/pkg/$top/CHANGELOG.md" > "$RUNNER_TEMP/notes.md"
+          [ -s "$RUNNER_TEMP/notes.md" ] || echo "_Kein Changelog-Eintrag für $version gefunden._" > "$RUNNER_TEMP/notes.md"
           manual=false
-          grep -qE '^### .*(Wichtig für dieses Update|Vor dem Einspielen)' /tmp/notes.md && manual=true
+          grep -qE '^### .*(Wichtig für dieses Update|Vor dem Einspielen)' "$RUNNER_TEMP/notes.md" && manual=true
 
           img="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/opennit"
           tags="$img:$version,$img:sha-${sha:0:7}"
@@ -228,13 +230,13 @@ jobs:
           VERSION: ${{ steps.pkg.outputs.version }}
         run: |
           set -euo pipefail
-          mkdir -p /tmp/trivy
-          docker run --rm -v /tmp/trivy:/out "$TRIVY_IMAGE" image -q --scanners vuln \
+          mkdir -p "$RUNNER_TEMP/trivy"
+          docker run --rm -v "$RUNNER_TEMP/trivy:/out" "$TRIVY_IMAGE" image -q --scanners vuln \
             --severity HIGH,CRITICAL --format json -o /out/new.json "$IMAGE:$VERSION"
           jq -r '[.Results[]?.Vulnerabilities[]?] | unique_by(.VulnerabilityID) as $v
             | "### Prüfscan des neuen Images\n"
             + "HIGH/CRITICAL gesamt: **\($v | length)**, davon mit verfügbarem Fix: **\([$v[] | select(.FixedVersion != null and .FixedVersion != "")] | length)**"' \
-            /tmp/trivy/new.json >> "$GITHUB_STEP_SUMMARY"
+            "$RUNNER_TEMP/trivy/new.json" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Gebauten Stand im Repo vermerken
         if: steps.pkg.outputs.build == 'true'
@@ -292,8 +294,8 @@ jobs:
             echo
             echo '_Changelog des OpenNIT-Projekts (nur auf Deutsch) · Changelog of the OpenNIT project (German only)_'
             echo
-            cat /tmp/notes.md
-          } > /tmp/body.md
-          args=(--title "OpenNIT $VERSION" --notes-file /tmp/body.md --target "$(git rev-parse HEAD)")
+            cat "$RUNNER_TEMP/notes.md"
+          } > "$RUNNER_TEMP/body.md"
+          args=(--title "OpenNIT $VERSION" --notes-file "$RUNNER_TEMP/body.md" --target "$(git rev-parse HEAD)")
           [[ "$VERSION" == *-* ]] && args+=(--prerelease)
           gh release create "v$VERSION" "${args[@]}"

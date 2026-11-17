@@ -6,5 +6,6 @@ opennit.env
 backups
 README.md
 README.de.md
+runner
 update.sh
 upstream.json

@@ -1,0 +1,32 @@
+# Self-hosted GitHub Actions runner for building the OpenNIT image (see README.md)
+services:
+  runner:
+    build: .               # official runner image + GitHub CLI (Dockerfile in this folder)
+    image: opennit-build-runner
+    restart: unless-stopped
+    depends_on: [dind]
+    environment:
+      REPO_URL: ${REPO_URL:-https://github.com/virtualben89/opennit-docker}
+      RUNNER_TOKEN: ${RUNNER_TOKEN:-}     # only needed for the first registration
+      RUNNER_NAME: ${RUNNER_NAME:-opennit-build}
+      RUNNER_LABELS: opennit-build
+      DOCKER_HOST: tcp://dind:2375
+    volumes:
+      - state:/home/runner/state
+      - work:/home/runner/_work
+
+  # Separate Docker daemon: build jobs neither see nor touch the host's containers
+  dind:
+    image: docker:29-dind
+    restart: unless-stopped
+    privileged: true       # required for Docker-in-Docker and QEMU (arm64 build)
+    environment:
+      DOCKER_TLS_CERTDIR: ""   # plain TCP, only reachable inside this compose network
+    volumes:
+      - dind:/var/lib/docker
+      - work:/home/runner/_work   # same path as in the runner, for bind mounts of jobs
+
+volumes:
+  state:
+  work:
+  dind:
