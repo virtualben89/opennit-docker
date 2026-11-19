@@ -138,6 +138,18 @@ if [ "$YES" = 0 ]; then
     [[ "${ans,,}" =~ ^(j|ja|y|yes)$ ]] || die "$(t "Abgebrochen – nichts verändert." "Cancelled – nothing changed.")" 0
 fi
 
+# --- Rescue settings from the container -----------------------------------------
+# OpenNIT replaces config/runtime.php (settings, modules) atomically via rename(), which
+# swaps the symlink into persist/ for a regular file in the container layer. Images before
+# 2026-11-19 did not move it back, so it would be lost on recreate. Copy it to the volume.
+RESCUED=$(dc exec -T app sh -c '
+    if [ ! -L config ] && [ -f config/runtime.php ] && [ ! -L config/runtime.php ]; then
+        cp -p config/runtime.php persist/runtime.php && echo config/runtime.php
+    fi
+    if [ -f .env ] && [ ! -L .env ]; then cp -p .env persist/.env && echo .env; fi' 2>/dev/null || true)
+[ -z "$RESCUED" ] || ok "$(t "Einstellungen aus dem Container gesichert:" \
+                             "Rescued settings from the container:") $(echo $RESCUED)"
+
 # --- Backup -------------------------------------------------------------------
 umask 077
 TS=$(date +%Y%m%d-%H%M%S)
