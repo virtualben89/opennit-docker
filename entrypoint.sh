@@ -56,4 +56,28 @@ is_installed && rm -f public/install.php
 # Record the image's upstream revision so the update check matches.
 [ -s /opt/opennit.sha ] && install -o www-data -g www-data -m 644 /opt/opennit.sha storage/.version
 
+# OpenNIT saves config/runtime.php (settings, modules) and occasionally .env atomically:
+# temp file + rename(). That replaces the symlink into persist/ with a regular file inside
+# the container – lost on the next recreate and invisible to the scheduler container.
+# Watch both and move them back into the volume right after such a write.
+sync_back() {   # <file in app dir> <symlink target> <file in persist/>
+    local f=$1 link=$2 target=$3 ino
+    [ -f "$f" ] && [ ! -L "$f" ] || return 0
+    ino=$(stat -c %i "$f")
+    cp -p "$f" "$target.sync" && mv -f "$target.sync" "$target"
+    ln -sfn "$link" "$f.sync" && chown -h www-data:www-data "$f.sync"
+    # only swap if OpenNIT has not written again in the meantime
+    if [ "$(stat -c %i "$f" 2>/dev/null)" = "$ino" ]; then mv -Tf "$f.sync" "$f"; else rm -f "$f.sync"; fi
+    echo "[opennit] Saved $f to the persistent volume."
+}
+if [ "${1:-}" = "apache2-foreground" ]; then
+    (
+        set +e    # keep watching even if a single copy fails
+        while sleep 2; do
+            sync_back config/runtime.php ../persist/runtime.php persist/runtime.php
+            sync_back .env persist/.env persist/.env
+        done
+    ) &
+fi
+
 exec "$@"
