@@ -1,6 +1,6 @@
 {
-  "version": "1.2.2",
-  "sha": "ce7e633f399d1a9c9bf205b9f600a13b92d87b3d",
-  "built_at": "2026-11-19T20:30:40Z",
-  "reason": "image"
+  "version": "2.0.3",
+  "sha": "248806f9ecc923aaa2daabd7dd0139e6251f2db3",
+  "built_at": "2026-11-23T15:39:14Z",
+  "reason": "release"
 }
