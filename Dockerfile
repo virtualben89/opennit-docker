@@ -34,6 +34,8 @@ COPY vhost.conf /etc/apache2/sites-available/000-default.conf
 # OpenNIT-Paket: src/opennit.zip, falls vorhanden (CI lädt es vorab und wertet es aus),
 # sonst direkt vom Update-Server (gleiche Quelle wie install.sh, Kanal "stable").
 COPY src/ /tmp/src/
+# Lokale Fixes für noch offene Upstream-Fehler (siehe patches/apply.php)
+COPY patches/ /tmp/patches/
 RUN set -eux; \
     if [ -f /tmp/src/opennit.zip ]; then mv /tmp/src/opennit.zip /tmp/o.zip; \
     else curl -fsSL -A "OpenNIT-Docker" "$OPENNIT_UPDATE_BASE/zip" -o /tmp/o.zip; fi; \
@@ -42,6 +44,7 @@ RUN set -eux; \
     # Commit-SHA steckt im Verzeichnisnamen des ZIPs (…-<sha>) – passt garantiert zum Inhalt
     basename "$SRC" | grep -oE '[0-9a-f]{40}$' > /opt/opennit.sha || true; \
     mkdir -p "$APP_DIR" && cp -a "$SRC"/. "$APP_DIR"/; rm -rf /tmp/o /tmp/o.zip; \
+    php /tmp/patches/apply.php "$APP_DIR"; rm -rf /tmp/patches; \
     cd "$APP_DIR"; \
     rm -rf CLAUDE.md .claude AGENTS.md .cursor .cursorrules .aider.conf.yml .github/copilot-instructions.md tests; \
     COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --optimize-autoloader --no-interaction; \
